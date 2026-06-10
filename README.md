@@ -21,13 +21,18 @@ The backend follows the same resource style as the Legommenders service:
 
 - `GET/POST /evaluations/`
 - `GET/DELETE /evaluations/<signature>`
-- `GET /evaluations/export`
+- `GET /evaluations/leaderboard`
 - `GET/POST/PUT /experiments/`
 - `GET /experiments/<session>`
 - `POST /experiments/<session>/register`
 - `GET /experiments/log`
+- `GET /stats/runtime-hours`
 
 Unlike the reference project, the metadata model is specialized for
 Secommenders and stores benchmark-facing fields such as `data_name`,
 `model_name`, `task_type`, `repr_type`, `run_id`, and
 `compile_prepare_id`.
+
+`/evaluations/leaderboard` is the single ranking export interface now. It
+accepts `metric`, `replicate`, `data_name`, `model_name`, `task_type`,
+`repr_type`, and `limit`.

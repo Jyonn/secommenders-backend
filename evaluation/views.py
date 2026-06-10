@@ -186,27 +186,26 @@ class LogSummarizeView(View):
         return ok({'updated': updated})
 
 
-class ExportView(View):
+class LeaderboardView(View):
     def get(self, request):
-        scenario = request.GET.get('scenario', 'leaderboard')
-
-        if scenario == 'get_total_running_hours':
-            return ok(get_total_running_hours())
-        if scenario in {'leaderboard', 'get_top_rank_models_per_datasets'}:
-            return ok(
-                get_leaderboard(
-                    replicate=function.parse_int(request.GET.get('replicate'), default=1, minimum=1),
-                    metric=request.GET.get('metric', ExportParams.DEFAULT_METRIC),
-                    data_name=request.GET.get('data_name'),
-                    model_name=request.GET.get('model_name'),
-                    task_type=request.GET.get('task_type'),
-                    repr_type=request.GET.get('repr_type'),
-                    limit=function.parse_int(
-                        request.GET.get('limit'),
-                        default=ExportParams.DEFAULT_LIMIT,
-                        minimum=1,
-                        maximum=200,
-                    ),
-                )
+        return ok(
+            get_leaderboard(
+                replicate=function.parse_int(request.GET.get('replicate'), default=1, minimum=1),
+                metric=request.GET.get('metric', ExportParams.DEFAULT_METRIC),
+                data_name=request.GET.get('data_name'),
+                model_name=request.GET.get('model_name'),
+                task_type=request.GET.get('task_type'),
+                repr_type=request.GET.get('repr_type'),
+                limit=function.parse_int(
+                    request.GET.get('limit'),
+                    default=ExportParams.DEFAULT_LIMIT,
+                    minimum=1,
+                    maximum=200,
+                ),
             )
-        return error('BAD_REQUEST', f'Unknown export scenario: {scenario}', 400)
+        )
+
+
+class RuntimeStatsView(View):
+    def get(self, request):
+        return ok({'runtime_hours': get_total_running_hours()})
