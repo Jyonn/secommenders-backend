@@ -11,13 +11,13 @@ class ExperimentInline(admin.TabularInline):
 
 @admin.register(Evaluation)
 class EvaluationAdmin(admin.ModelAdmin):
-    list_display = ('signature', 'name', 'created_at', 'modified_at')
-    search_fields = ('signature', 'name', 'command')
+    list_display = ('signature', 'name', 'data_name', 'model_name', 'task_type', 'repr_type', 'created_at')
+    search_fields = ('signature', 'name', 'command', 'data_name', 'model_name', 'task_type', 'repr_type', 'run_id')
     inlines = [ExperimentInline]
 
 
 @admin.register(Experiment)
 class ExperimentAdmin(admin.ModelAdmin):
-    list_display = ('session', 'evaluation', 'seed', 'status', 'is_completed', 'created_at', 'completed_at')
+    list_display = ('session', 'evaluation', 'seed', 'status', 'phase', 'is_completed', 'created_at', 'completed_at')
     search_fields = ('session', 'evaluation__signature', 'hostname', 'run_dir')
     list_filter = ('status', 'is_completed')

@@ -1,0 +1,11 @@
+class EvaluationValidator:
+    MAX_SIGNATURE_LENGTH = 64
+    MAX_NAME_LENGTH = 200
+    MAX_FIELD_LENGTH = 128
+
+
+class ExperimentValidator:
+    MAX_SESSION_LENGTH = 32
+    MAX_STATUS_LENGTH = 32
+    MAX_PHASE_LENGTH = 32
+    MAX_HOSTNAME_LENGTH = 255

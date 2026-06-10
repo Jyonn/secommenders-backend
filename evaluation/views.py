@@ -1,13 +1,14 @@
 import json
 
 from django.core.paginator import Paginator
-from django.http import HttpResponseNotAllowed
 from django.views import View
 
 from common.auth import require_login
+from common import function, handler
 from common.http import error, ok, parse_json
-from evaluation.export import get_top_rank_models_per_datasets, get_total_running_hours
+from evaluation.export import get_leaderboard, get_total_running_hours
 from evaluation.models import Evaluation, Experiment
+from evaluation.params import EvaluationParams, ExportParams
 
 
 class HealthView(View):
@@ -15,11 +16,31 @@ class HealthView(View):
         return ok({'status': 'ok'})
 
 
-class EvaluationCollectionView(View):
-    def get(self, request):
-        page = max(int(request.GET.get('page', 1)), 1)
-        page_size = min(max(int(request.GET.get('page_size', 50)), 10), 100)
+class EvaluationView(View):
+    def get(self, request, signature=None):
+        if signature:
+            try:
+                evaluation = Evaluation.get_by_signature(signature)
+            except Evaluation.DoesNotExist:
+                return error('NOT_FOUND', 'Evaluation not found.', 404)
+            return ok(evaluation.json())
+
+        page = function.parse_int(
+            request.GET.get('page'),
+            default=1,
+            minimum=1,
+        )
+        page_size = function.parse_int(
+            request.GET.get('page_size'),
+            default=EvaluationParams.LIST_PAGE_SIZE_DEFAULT,
+            minimum=10,
+            maximum=EvaluationParams.LIST_PAGE_SIZE_MAX,
+        )
         evaluations = Evaluation.objects.all().order_by('-modified_at')
+        for field_name in ['plan_name', 'data_name', 'model_name', 'task_type', 'repr_type', 'run_id']:
+            value = request.GET.get(field_name)
+            if value:
+                evaluations = evaluations.filter(**{field_name: str(value).lower() if field_name != 'run_id' else str(value)})
         paginator = Paginator(evaluations, page_size)
         current_page = paginator.page(min(page, paginator.num_pages or 1))
         return ok(
@@ -44,17 +65,8 @@ class EvaluationCollectionView(View):
         if not signature or not command or configuration is None:
             return error('BAD_REQUEST', 'signature, command, and configuration are required.', 400)
         if isinstance(configuration, (dict, list)):
-            configuration = json.dumps(configuration, ensure_ascii=False, sort_keys=True)
+            configuration = handler.json_dumps(configuration)
         evaluation = Evaluation.create_or_get(signature, command, configuration, name=name)
-        return ok(evaluation.json())
-
-
-class EvaluationDetailView(View):
-    def get(self, request, signature):
-        try:
-            evaluation = Evaluation.get_by_signature(signature)
-        except Evaluation.DoesNotExist:
-            return error('NOT_FOUND', 'Evaluation not found.', 404)
         return ok(evaluation.json())
 
     @require_login
@@ -67,12 +79,11 @@ class EvaluationDetailView(View):
         return ok(True)
 
 
-class ExperimentCollectionView(View):
-    def get(self, request):
-        session = request.GET.get('session')
+class ExperimentView(View):
+    def get(self, request, session=None):
+        session = session or request.GET.get('session')
         signature = request.GET.get('signature')
-        seed_text = request.GET.get('seed')
-        seed = int(seed_text) if seed_text is not None else None
+        seed = function.parse_int(request.GET.get('seed'))
         try:
             experiment = Experiment.get(signature=signature, seed=seed, session=session)
         except Evaluation.DoesNotExist:
@@ -114,9 +125,9 @@ class ExperimentCollectionView(View):
         meta = payload.get('meta')
         performance = payload.get('performance')
         if isinstance(meta, (dict, list)):
-            meta = json.dumps(meta, ensure_ascii=False, sort_keys=True)
+            meta = handler.json_dumps(meta)
         if isinstance(performance, (dict, list)):
-            performance = json.dumps(performance, ensure_ascii=False, sort_keys=True)
+            performance = handler.json_dumps(performance)
         experiment.update_state(
             status=payload.get('status'),
             phase=payload.get('phase'),
@@ -125,15 +136,6 @@ class ExperimentCollectionView(View):
             performance=performance,
             error=payload.get('error'),
         )
-        return ok(experiment.json())
-
-
-class ExperimentDetailView(View):
-    def get(self, request, session):
-        try:
-            experiment = Experiment.get_by_session(session)
-        except Experiment.DoesNotExist:
-            return error('NOT_FOUND', 'Experiment not found.', 404)
         return ok(experiment.json())
 
 
@@ -163,8 +165,7 @@ class LogView(View):
     def get(self, request):
         session = request.GET.get('session')
         signature = request.GET.get('signature')
-        seed_text = request.GET.get('seed')
-        seed = int(seed_text) if seed_text is not None else None
+        seed = function.parse_int(request.GET.get('seed'))
         try:
             experiment = Experiment.get(signature=signature, seed=seed, session=session)
         except Evaluation.DoesNotExist:
@@ -187,23 +188,25 @@ class LogSummarizeView(View):
 
 class ExportView(View):
     def get(self, request):
-        scenario = request.GET.get('scenario', 'get_top_rank_models_per_datasets')
-        metrics = request.GET.get('metrics')
-        datasets = request.GET.get('datasets')
-        top_k = int(request.GET.get('top_k', 1))
-        replicate = int(request.GET.get('replicate', 1))
-        metric_list = metrics.split(',') if metrics else None
-        dataset_list = datasets.split(',') if datasets else None
+        scenario = request.GET.get('scenario', 'leaderboard')
 
         if scenario == 'get_total_running_hours':
             return ok(get_total_running_hours())
-        if scenario == 'get_top_rank_models_per_datasets':
+        if scenario in {'leaderboard', 'get_top_rank_models_per_datasets'}:
             return ok(
-                get_top_rank_models_per_datasets(
-                    replicate=replicate,
-                    metrics=metric_list,
-                    datasets=dataset_list,
-                    top_k=top_k,
+                get_leaderboard(
+                    replicate=function.parse_int(request.GET.get('replicate'), default=1, minimum=1),
+                    metric=request.GET.get('metric', ExportParams.DEFAULT_METRIC),
+                    data_name=request.GET.get('data_name'),
+                    model_name=request.GET.get('model_name'),
+                    task_type=request.GET.get('task_type'),
+                    repr_type=request.GET.get('repr_type'),
+                    limit=function.parse_int(
+                        request.GET.get('limit'),
+                        default=ExportParams.DEFAULT_LIMIT,
+                        minimum=1,
+                        maximum=200,
+                    ),
                 )
             )
         return error('BAD_REQUEST', f'Unknown export scenario: {scenario}', 400)

@@ -1,9 +1,9 @@
 from functools import wraps
 
-from django.conf import settings
 from django.db import OperationalError, ProgrammingError
 
 from common.http import error
+from common.space import Space
 
 
 def _resolve_expected_token():
@@ -15,7 +15,7 @@ def _resolve_expected_token():
             return value
     except (OperationalError, ProgrammingError):
         pass
-    return settings.SECOMMENDER_BACKEND_AUTH_TOKEN
+    return Space.auth
 
 
 def require_login(view_func):
