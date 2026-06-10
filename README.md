@@ -1,4 +1,4 @@
-# Secommender Backend
+# Secommenders Backend
 
 Minimal Django backend for publishing Secommenders experiment runs.
 
