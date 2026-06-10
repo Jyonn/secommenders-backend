@@ -6,16 +6,23 @@ Minimal Django backend for publishing Secommenders experiment runs.
 
 ```bash
 pip install -r requirements.txt
-export MYSQL_HOST=127.0.0.1
-export MYSQL_PORT=3306
-export MYSQL_DATABASE=secommenders_backend
-export MYSQL_USER=root
-export MYSQL_PASSWORD=your_password
 python manage.py migrate
 python manage.py runserver 0.0.0.0:8000
 ```
 
-Create the MySQL database first, for example:
+Create `mysql.local.conf` in the repo root:
+
+```ini
+[client]
+host = localhost
+port = 3306
+database = secommenders_backend
+user = root
+password = your_password
+default-character-set = utf8mb4
+```
+
+Then create the MySQL database, for example:
 
 ```sql
 CREATE DATABASE secommenders_backend CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
