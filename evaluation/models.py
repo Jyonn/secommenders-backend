@@ -1,3 +1,5 @@
+import hashlib
+
 from django.db import models
 from django.utils import timezone
 from django.utils.crypto import get_random_string
@@ -11,7 +13,8 @@ class Evaluation(models.Model):
 
     signature = models.CharField(max_length=vldt.MAX_SIGNATURE_LENGTH, unique=True)
     name = models.CharField(max_length=vldt.MAX_NAME_LENGTH, blank=True)
-    command = models.TextField(unique=True)
+    command_digest = models.CharField(max_length=64, unique=True, db_index=True)
+    command = models.TextField()
     configuration = models.TextField()
     plan_name = models.CharField(max_length=vldt.MAX_FIELD_LENGTH, blank=True, db_index=True)
     data_name = models.CharField(max_length=vldt.MAX_FIELD_LENGTH, blank=True, db_index=True)
@@ -32,6 +35,7 @@ class Evaluation(models.Model):
     def create(cls, signature, command, configuration, name=''):
         evaluation = cls(
             signature=signature,
+            command_digest=cls.digest_command(command),
             command=command,
             configuration=configuration,
             name=name or '',
@@ -42,10 +46,12 @@ class Evaluation(models.Model):
 
     @classmethod
     def create_or_get(cls, signature, command, configuration, name=''):
+        command_digest = cls.digest_command(command)
         evaluation, created = cls.objects.get_or_create(
-            command=command,
+            command_digest=command_digest,
             defaults={
                 'signature': signature,
+                'command': command,
                 'configuration': configuration,
                 'name': name or '',
             },
@@ -56,6 +62,9 @@ class Evaluation(models.Model):
             dirty = True
         if evaluation.configuration != configuration:
             evaluation.configuration = configuration
+            dirty = True
+        if evaluation.command != command:
+            evaluation.command = command
             dirty = True
         if name and evaluation.name != name:
             evaluation.name = name
@@ -94,6 +103,10 @@ class Evaluation(models.Model):
     @classmethod
     def get_by_signature(cls, signature):
         return cls.objects.get(signature=signature)
+
+    @staticmethod
+    def digest_command(command: str):
+        return hashlib.sha256(str(command).encode('utf-8')).hexdigest()
 
     def prettify_configuration(self):
         if not self.configuration:
