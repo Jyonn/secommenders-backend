@@ -1,0 +1,119 @@
+@host = http://localhost:8000
+@auth = your_token_here
+@signature = demo-signature
+@session = demo-session
+
+### Health
+GET {{host}}/healthz
+
+### List evaluations
+GET {{host}}/evaluations/
+
+### Filter evaluations
+GET {{host}}/evaluations/?data_name=mind&task_type=sid&repr_type=sid
+
+### Create or get evaluation
+POST {{host}}/evaluations/
+Authentication: {{auth}}
+Content-Type: application/json
+
+{
+  "signature": "{{signature}}",
+  "name": "demo-evaluation",
+  "command": "python trainer.py --data mind --model scratch --task_type uid --repr_type uid",
+  "configuration": {
+    "plan_name": "demo-plan",
+    "base_args": {
+      "data": "mind",
+      "model": "scratch",
+      "task_type": "uid",
+      "repr_type": "uid"
+    },
+    "logical_train_args": {
+      "data": "mind",
+      "model": "scratch",
+      "task_type": "uid",
+      "repr_type": "uid",
+      "batch_size": 64
+    },
+    "run_id": "demo-run-id",
+    "compile_prepare_id": "scratch__uid2uid"
+  }
+}
+
+### Get evaluation detail
+GET {{host}}/evaluations/{{signature}}
+
+### Delete evaluation
+DELETE {{host}}/evaluations/{{signature}}
+Authentication: {{auth}}
+
+### Create or get experiment session
+POST {{host}}/experiments/
+Authentication: {{auth}}
+Content-Type: application/json
+
+{
+  "signature": "{{signature}}",
+  "seed": 42
+}
+
+### Query experiment by signature and seed
+GET {{host}}/experiments/?signature={{signature}}&seed=42
+
+### Query experiment by session
+GET {{host}}/experiments/{{session}}
+
+### Register running experiment
+POST {{host}}/experiments/{{session}}/register
+Authentication: {{auth}}
+Content-Type: application/json
+
+{
+  "pid": 12345,
+  "hostname": "localhost",
+  "run_dir": "/tmp/secommenders/demo-run",
+  "log_path": "/tmp/secommenders/demo-run/train.log",
+  "command": "python trainer.py --data mind --model scratch --task_type uid --repr_type uid",
+  "phase": "train"
+}
+
+### Update experiment status
+PUT {{host}}/experiments/
+Authentication: {{auth}}
+Content-Type: application/json
+
+{
+  "session": "{{session}}",
+  "status": "completed",
+  "phase": "train",
+  "meta": {
+    "world_size": 1,
+    "best_epoch": 3,
+    "best_valid_metric": 0.4123,
+    "main_metric": "ndcg@10",
+    "test_metric_name": "ndcg@20",
+    "test_metrics": {
+      "ndcg@10": 0.4011,
+      "hr@10": 0.5522
+    }
+  },
+  "performance": {
+    "ndcg@10": 0.4011,
+    "hr@10": 0.5522
+  },
+  "log": "demo log line 1\ndemo log line 2",
+  "error": ""
+}
+
+### Read experiment log by session
+GET {{host}}/experiments/log?session={{session}}
+
+### Leaderboard
+GET {{host}}/evaluations/leaderboard?metric=ndcg@10&replicate=1&data_name=mind&limit=20
+
+### Recompute runtime summary
+GET {{host}}/log-summarize
+
+### Runtime stats
+GET {{host}}/stats/runtime-hours
