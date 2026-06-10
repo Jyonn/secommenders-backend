@@ -30,8 +30,16 @@ CREATE DATABASE secommenders_backend CHARACTER SET utf8mb4 COLLATE utf8mb4_unico
 
 ## Auth
 
-Set `SECOMMENDER_BACKEND_AUTH_TOKEN` in the environment. The client sends it
-through the `Authentication` header.
+The backend reads the expected auth token from the `config_configentry` table
+with key `auth`.
+
+You can initialize it with Django shell:
+
+```bash
+python manage.py shell -c "from config.models import ConfigEntry; ConfigEntry.set('auth', 'your_token')"
+```
+
+The client still sends that token through the `Authentication` header.
 
 ## API Shape
 

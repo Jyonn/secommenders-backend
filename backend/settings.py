@@ -81,5 +81,3 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-SECOMMENDER_BACKEND_AUTH_TOKEN = os.environ.get('SECOMMENDER_BACKEND_AUTH_TOKEN', '')

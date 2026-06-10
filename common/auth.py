@@ -1,20 +1,10 @@
 from functools import wraps
 
-from django.db import OperationalError, ProgrammingError
-
 from common.http import error
 from common.space import Space
 
 
 def _resolve_expected_token():
-    try:
-        from config.models import ConfigEntry
-
-        value = ConfigEntry.get('auth', default=None)
-        if value:
-            return value
-    except (OperationalError, ProgrammingError):
-        pass
     return Space.auth
 
 

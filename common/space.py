@@ -1,5 +1,10 @@
-from django.conf import settings
+from config.models import ConfigEntry
 
 
 class Space:
-    auth = settings.SECOMMENDER_BACKEND_AUTH_TOKEN
+    @property
+    def auth(self):
+        return ConfigEntry.get('auth', default=None)
+
+
+Space = Space()
