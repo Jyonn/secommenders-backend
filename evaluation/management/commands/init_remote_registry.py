@@ -29,13 +29,18 @@ def json_loads_or_none(text: str):
 def canonicalize_signature_payload(configuration: dict):
     payload = configuration.get('signature_payload')
     if not isinstance(payload, dict):
-        return None
+        payload = configuration
 
     canonical = {
         'schema_version': EVALUATION_SIGNATURE_VERSION,
-        'effective_batch_size': payload.get('effective_batch_size'),
-        'logical_train_args': payload.get('logical_train_args') or {},
-        'trained_signature': payload.get('trained_signature'),
+        'effective_batch_size': payload.get('effective_batch_size') or configuration.get('effective_batch_size'),
+        'logical_train_args': (
+            payload.get('logical_train_args')
+            or configuration.get('logical_train_args')
+            or configuration.get('base_args')
+            or {}
+        ),
+        'trained_signature': payload.get('trained_signature') or configuration.get('trained_signature'),
     }
     if canonical['effective_batch_size'] is None or not canonical['trained_signature']:
         return None
