@@ -1,6 +1,10 @@
 import hashlib
 import json
+import re
+import sys
 from collections import defaultdict
+from copy import deepcopy
+from pathlib import Path
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -10,6 +14,18 @@ from evaluation.models import Evaluation
 
 
 EVALUATION_SIGNATURE_VERSION = 'evaluation.v2'
+REPORT_RUNTIME_ARG_KEYS = {
+    'batch_size',
+    'accumulate_batch',
+    'device',
+    'num_gpus',
+    'valid_only',
+    'test_only',
+    'load_ckpt',
+    'overwrite',
+    'code_beam_chunk_size',
+}
+LEGACY_RUN_HASH_RE = re.compile(r'__h([0-9a-fA-F]{6,64})$')
 
 
 def short_config_hash(payload: dict, length: int = 16):
@@ -26,24 +42,118 @@ def json_loads_or_none(text: str):
         return None
 
 
-def canonicalize_signature_payload(configuration: dict):
+def canonical_report_args(args: dict, *, effective_batch_size: int):
+    canonical = deepcopy(args)
+    for key in REPORT_RUNTIME_ARG_KEYS:
+        canonical.pop(key, None)
+    canonical['effective_batch_size'] = int(effective_batch_size)
+    return canonical
+
+
+def effective_batch_from_args(args: dict):
+    if args.get('effective_batch_size') is not None:
+        return int(args['effective_batch_size'])
+    batch_size = args.get('batch_size')
+    accumulate_batch = args.get('accumulate_batch')
+    if batch_size is not None and accumulate_batch is not None:
+        return int(batch_size) * int(accumulate_batch)
+    return None
+
+
+def legacy_hash_from_run_id(value: str):
+    match = LEGACY_RUN_HASH_RE.search(str(value or ''))
+    if not match:
+        return None
+    return f'legacy:{match.group(1).lower()}'
+
+
+def find_algorithm_root(option_value: str | None):
+    candidates = []
+    if option_value:
+        candidates.append(Path(option_value).expanduser())
+    candidates.extend(
+        [
+            Path('../secommenders-algorithm'),
+            Path('../Secommenders'),
+            Path('~/Secommenders').expanduser(),
+            Path('~/secommenders-algorithm').expanduser(),
+            Path('/home/data4/qijiong/Code/Secommenders'),
+            Path('/root/autodl-tmp/Secommenders'),
+        ]
+    )
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if (candidate / 'config' / 'trainer.yaml').exists() and (candidate / 'utils' / 'artifact_identity.py').exists():
+            return candidate
+    return None
+
+
+class AlgorithmSigner:
+    def __init__(self, algorithm_root: Path | None):
+        self.algorithm_root = algorithm_root
+        self.available = False
+        self.error = ''
+        if algorithm_root is None:
+            self.error = 'algorithm root not found'
+            return
+        try:
+            sys.path.insert(0, str(algorithm_root))
+            from utils.artifact_identity import trained_signature_from_config
+
+            self.trained_signature_from_config = trained_signature_from_config
+            self.available = True
+        except Exception as exc:
+            self.error = repr(exc)
+
+    def sign(self, args: dict):
+        if not self.available:
+            return None
+        return self.trained_signature_from_config(dict(args))
+
+
+def first_experiment_meta_config(evaluation):
+    for experiment in evaluation.experiment_set.all().order_by('created_at', 'id'):
+        meta = json_loads_or_none(experiment.meta)
+        if isinstance(meta, dict) and isinstance(meta.get('config'), dict):
+            return meta['config']
+    return None
+
+
+def canonicalize_signature_payload(configuration: dict, evaluation, signer: AlgorithmSigner):
     payload = configuration.get('signature_payload')
     if not isinstance(payload, dict):
         payload = configuration
 
+    train_args = (
+        payload.get('logical_train_args')
+        or configuration.get('logical_train_args')
+        or first_experiment_meta_config(evaluation)
+        or configuration.get('base_args')
+        or {}
+    )
+    effective_batch_size = (
+        payload.get('effective_batch_size')
+        or configuration.get('effective_batch_size')
+        or effective_batch_from_args(train_args)
+    )
+    trained_signature = payload.get('trained_signature') or configuration.get('trained_signature')
+    if not trained_signature and train_args:
+        trained_signature = signer.sign(train_args)
+    if not trained_signature:
+        trained_signature = legacy_hash_from_run_id(configuration.get('run_id') or evaluation.run_id)
+
+    if effective_batch_size is None and train_args:
+        effective_batch_size = effective_batch_from_args(train_args)
+
+    if effective_batch_size is None or not trained_signature:
+        return None
+
     canonical = {
         'schema_version': EVALUATION_SIGNATURE_VERSION,
-        'effective_batch_size': payload.get('effective_batch_size') or configuration.get('effective_batch_size'),
-        'logical_train_args': (
-            payload.get('logical_train_args')
-            or configuration.get('logical_train_args')
-            or configuration.get('base_args')
-            or {}
-        ),
-        'trained_signature': payload.get('trained_signature') or configuration.get('trained_signature'),
+        'effective_batch_size': int(effective_batch_size),
+        'logical_train_args': canonical_report_args(train_args, effective_batch_size=int(effective_batch_size)),
+        'trained_signature': trained_signature,
     }
-    if canonical['effective_batch_size'] is None or not canonical['trained_signature']:
-        return None
     return canonical
 
 
@@ -60,8 +170,9 @@ class Command(BaseCommand):
         parser.add_argument('--apply', action='store_true', help='Write database changes. Default is dry-run.')
         parser.add_argument('--signature', help='Only process one current evaluation signature.')
         parser.add_argument('--delete-empty', action='store_true', help='Delete source evaluations after moving experiments.')
+        parser.add_argument('--algorithm-root', help='Path to secommenders-algorithm for exact trained SIGN recomputation.')
 
-    def _collect(self, signature: str | None):
+    def _collect(self, signature: str | None, signer: AlgorithmSigner):
         queryset = Evaluation.objects.all().order_by('created_at', 'id')
         if signature:
             queryset = queryset.filter(signature=signature)
@@ -73,7 +184,7 @@ class Command(BaseCommand):
             if not isinstance(configuration, dict):
                 skipped.append((evaluation, 'configuration is not JSON object'))
                 continue
-            signature_payload = canonicalize_signature_payload(configuration)
+            signature_payload = canonicalize_signature_payload(configuration, evaluation, signer)
             if not signature_payload:
                 skipped.append((evaluation, 'missing usable signature_payload'))
                 continue
@@ -174,7 +285,14 @@ class Command(BaseCommand):
             self._apply_target(target_signature, records, delete_empty=delete_empty)
 
     def handle(self, *args, **options):
-        resolved, skipped = self._collect(options.get('signature'))
+        algorithm_root = find_algorithm_root(options.get('algorithm_root'))
+        signer = AlgorithmSigner(algorithm_root)
+        if signer.available:
+            self.stdout.write(f'algorithm signer enabled root={algorithm_root}')
+        else:
+            self.stdout.write(f'algorithm signer unavailable: {signer.error}; falling back to legacy run_id hashes')
+
+        resolved, skipped = self._collect(options.get('signature'), signer)
         by_target, conflicts = self._plan(resolved)
         self._print_plan(by_target, skipped, conflicts, apply=options['apply'])
         if conflicts:
