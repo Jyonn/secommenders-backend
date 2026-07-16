@@ -1,11 +1,15 @@
 import hashlib
 
-from django.db import models
+from django.db import IntegrityError, models
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 
 from common import handler
 from evaluation.validators import EvaluationValidator, ExperimentValidator
+
+
+class EvaluationConflictError(ValueError):
+    pass
 
 
 class Evaluation(models.Model):
@@ -47,18 +51,42 @@ class Evaluation(models.Model):
     @classmethod
     def create_or_get(cls, signature, command, configuration, name=''):
         command_digest = cls.digest_command(command)
-        evaluation, created = cls.objects.get_or_create(
-            command_digest=command_digest,
-            defaults={
-                'signature': signature,
-                'command': command,
-                'configuration': configuration,
-                'name': name or '',
-            },
-        )
+        evaluation = cls.objects.filter(signature=signature).first()
+        if evaluation is None:
+            evaluation = cls.objects.filter(command_digest=command_digest).first()
+        if evaluation is None:
+            try:
+                return cls.create(signature, command, configuration, name=name)
+            except IntegrityError as exc:
+                evaluation = (
+                    cls.objects.filter(signature=signature).first()
+                    or cls.objects.filter(command_digest=command_digest).first()
+                )
+                if evaluation is None:
+                    raise EvaluationConflictError(
+                        f'Unable to create evaluation signature={signature}: {exc}'
+                    ) from exc
+
+        signature_owner = cls.objects.filter(signature=signature).exclude(pk=evaluation.pk).first()
+        if signature_owner is not None:
+            raise EvaluationConflictError(
+                f'Evaluation signature conflict: signature={signature} already belongs to '
+                f'evaluation id={signature_owner.pk}, but command_digest points to id={evaluation.pk}.'
+            )
+
+        digest_owner = cls.objects.filter(command_digest=command_digest).exclude(pk=evaluation.pk).first()
+        if digest_owner is not None:
+            raise EvaluationConflictError(
+                f'Evaluation command conflict: command_digest={command_digest} already belongs to '
+                f'evaluation id={digest_owner.pk}, but signature points to id={evaluation.pk}.'
+            )
+
         dirty = False
         if evaluation.signature != signature:
             evaluation.signature = signature
+            dirty = True
+        if evaluation.command_digest != command_digest:
+            evaluation.command_digest = command_digest
             dirty = True
         if evaluation.configuration != configuration:
             evaluation.configuration = configuration
@@ -97,7 +125,12 @@ class Evaluation(models.Model):
             'compile_prepare_id': evaluation.compile_prepare_id,
         }
         if dirty or before != after:
-            evaluation.save()
+            try:
+                evaluation.save()
+            except IntegrityError as exc:
+                raise EvaluationConflictError(
+                    f'Unable to update evaluation signature={signature}: {exc}'
+                ) from exc
         return evaluation
 
     @classmethod
@@ -279,10 +312,16 @@ class Experiment(models.Model):
 
     @classmethod
     def create_or_get(cls, evaluation, seed):
+        experiment = cls.objects.filter(evaluation=evaluation, seed=seed).order_by('created_at', 'pk').first()
+        if experiment is not None:
+            return experiment
         try:
-            return cls.objects.get(evaluation=evaluation, seed=seed)
-        except cls.DoesNotExist:
             return cls.create(evaluation, seed)
+        except IntegrityError:
+            experiment = cls.objects.filter(evaluation=evaluation, seed=seed).order_by('created_at', 'pk').first()
+            if experiment is not None:
+                return experiment
+            raise
 
     @classmethod
     def get_by_session(cls, session):

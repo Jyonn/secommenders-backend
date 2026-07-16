@@ -7,7 +7,7 @@ from common.auth import require_login
 from common import function, handler
 from common.http import error, ok, parse_json
 from evaluation.export import get_leaderboard, get_total_running_hours
-from evaluation.models import Evaluation, Experiment
+from evaluation.models import Evaluation, EvaluationConflictError, Experiment
 from evaluation.params import EvaluationParams, ExportParams
 
 
@@ -66,7 +66,10 @@ class EvaluationView(View):
             return error('BAD_REQUEST', 'signature, command, and configuration are required.', 400)
         if isinstance(configuration, (dict, list)):
             configuration = handler.json_dumps(configuration)
-        evaluation = Evaluation.create_or_get(signature, command, configuration, name=name)
+        try:
+            evaluation = Evaluation.create_or_get(signature, command, configuration, name=name)
+        except EvaluationConflictError as exc:
+            return error('CONFLICT', str(exc), 409)
         return ok(evaluation.json())
 
     @require_login
