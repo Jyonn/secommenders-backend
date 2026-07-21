@@ -6,7 +6,7 @@ from django.views import View
 from common.auth import require_login
 from common import function, handler
 from common.http import error, ok, parse_json
-from evaluation.export import get_leaderboard, get_total_running_hours
+from evaluation.export import get_leaderboard, get_total_running_hours, normalize_filter_values
 from evaluation.models import Evaluation, EvaluationConflictError, Experiment
 from evaluation.params import EvaluationParams, ExportParams
 
@@ -38,9 +38,11 @@ class EvaluationView(View):
         )
         evaluations = Evaluation.objects.all().order_by('-modified_at')
         for field_name in ['plan_name', 'data_name', 'model_name', 'task_type', 'repr_type', 'run_id']:
-            value = request.GET.get(field_name)
-            if value:
-                evaluations = evaluations.filter(**{field_name: str(value).lower() if field_name != 'run_id' else str(value)})
+            values = []
+            for value in request.GET.getlist(field_name):
+                values.extend(normalize_filter_values(value, lowercase=field_name != 'run_id'))
+            if values:
+                evaluations = evaluations.filter(**{f'{field_name}__in': values})
         paginator = Paginator(evaluations, page_size)
         current_page = paginator.page(min(page, paginator.num_pages or 1))
         return ok(
@@ -223,10 +225,10 @@ class LeaderboardView(View):
             get_leaderboard(
                 replicate=function.parse_int(request.GET.get('replicate'), default=1, minimum=1),
                 metric=request.GET.get('metric', ExportParams.DEFAULT_METRIC),
-                data_name=request.GET.get('data_name'),
-                model_name=request.GET.get('model_name'),
-                task_type=request.GET.get('task_type'),
-                repr_type=request.GET.get('repr_type'),
+                data_name=request.GET.getlist('data_name') or request.GET.get('data_name'),
+                model_name=request.GET.getlist('model_name') or request.GET.get('model_name'),
+                task_type=request.GET.getlist('task_type') or request.GET.get('task_type'),
+                repr_type=request.GET.getlist('repr_type') or request.GET.get('repr_type'),
                 limit=function.parse_int(
                     request.GET.get('limit'),
                     default=ExportParams.DEFAULT_LIMIT,
