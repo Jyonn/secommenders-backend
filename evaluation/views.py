@@ -82,6 +82,34 @@ class EvaluationView(View):
         return ok(True)
 
 
+class EvaluationOptionsView(View):
+    def get(self, request):
+        def distinct_values(field_name, limit=300):
+            queryset = (
+                Evaluation.objects.exclude(**{field_name: ''})
+                .order_by(field_name)
+                .values_list(field_name, flat=True)
+                .distinct()
+            )
+            return list(queryset[:limit])
+
+        return ok(
+            {
+                'plan_name': distinct_values('plan_name'),
+                'data_name': distinct_values('data_name'),
+                'model_name': distinct_values('model_name'),
+                'task_type': distinct_values('task_type'),
+                'repr_type': distinct_values('repr_type'),
+                'repr_source_model': distinct_values('repr_source_model'),
+                'repr_combine': distinct_values('repr_combine'),
+                'sid_coder': distinct_values('sid_coder'),
+                'hash_coder': distinct_values('hash_coder'),
+                'run_id': distinct_values('run_id'),
+                'metrics': ['hr@5', 'hr@10', 'hr@20', 'ndcg@5', 'ndcg@10', 'ndcg@20', 'mrr', 'loss'],
+            }
+        )
+
+
 class ExperimentView(View):
     def get(self, request, session=None):
         session = session or request.GET.get('session')

@@ -1,6 +1,7 @@
 from django.urls import path
 
 from evaluation.views import (
+    EvaluationOptionsView,
     EvaluationView,
     ExperimentView,
     ExperimentRegisterView,
@@ -15,6 +16,7 @@ from evaluation.views import (
 urlpatterns = [
     path('healthz', HealthView.as_view(), name='health'),
     path('evaluations/', EvaluationView.as_view(), name='evaluation-list'),
+    path('evaluations/options', EvaluationOptionsView.as_view(), name='evaluation-options'),
     path('evaluations/leaderboard', LeaderboardView.as_view(), name='evaluation-leaderboard'),
     path('evaluations/<str:signature>', EvaluationView.as_view(), name='evaluation-detail'),
     path('experiments/', ExperimentView.as_view(), name='experiment-list'),
