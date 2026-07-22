@@ -1,3 +1,4 @@
+from django.db.models import Avg
 from django.utils.dateparse import parse_datetime
 
 from evaluation.models import Evaluation, Experiment
@@ -67,13 +68,15 @@ def get_leaderboard(
 
     rows = []
     for evaluation in evaluations:
-        completed = evaluation.experiment_set.filter(is_completed=True).count()
+        completed_experiments = evaluation.experiment_set.filter(is_completed=True)
+        completed = completed_experiments.count()
         if completed < int(replicate):
             continue
         performance = evaluation.prettify_performance(metrics=[metric])
         stats = performance.get(metric)
         if not stats:
             continue
+        avg_epoch = completed_experiments.aggregate(value=Avg('best_epoch'))['value']
         rows.append(
             {
                 'signature': evaluation.signature,
@@ -88,6 +91,7 @@ def get_leaderboard(
                 'mean': stats[0],
                 'std': stats[1],
                 'replicate': completed,
+                'avg_epoch': avg_epoch,
                 'performance': evaluation.prettify_performance(),
             }
         )
