@@ -76,7 +76,11 @@ def get_leaderboard(
         stats = performance.get(metric)
         if not stats:
             continue
-        avg_epoch = completed_experiments.aggregate(value=Avg('best_epoch'))['value']
+        epoch_stats = completed_experiments.aggregate(
+            trained=Avg('trained_epochs'),
+            best=Avg('best_epoch'),
+        )
+        avg_epoch = epoch_stats['trained'] if epoch_stats['trained'] is not None else epoch_stats['best']
         rows.append(
             {
                 'signature': evaluation.signature,

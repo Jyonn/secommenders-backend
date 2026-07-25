@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.utils.crypto import get_random_string
 
 from common import handler
+from evaluation.log_parser import dumps_epoch_summary, parse_epoch_summary
 from evaluation.validators import EvaluationValidator, ExperimentValidator
 
 
@@ -296,6 +297,11 @@ class Experiment(models.Model):
     best_valid_metric = models.FloatField(null=True, blank=True)
     main_metric = models.CharField(max_length=64, blank=True)
     test_metric_name = models.CharField(max_length=64, blank=True)
+    trained_epochs = models.IntegerField(null=True, blank=True)
+    log_best_epoch = models.IntegerField(null=True, blank=True)
+    avg_train_epoch_seconds = models.FloatField(null=True, blank=True)
+    avg_eval_epoch_seconds = models.FloatField(null=True, blank=True)
+    epoch_summary = models.TextField(blank=True)
     is_completed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
@@ -365,6 +371,7 @@ class Experiment(models.Model):
         if error is not None:
             self.error = error
         self._refresh_summary_from_meta()
+        self._refresh_epoch_summary_from_log()
         if self.status == self.STATUS_COMPLETED:
             self.is_completed = True
             self.completed_at = timezone.now()
@@ -393,6 +400,23 @@ class Experiment(models.Model):
         self.main_metric = str(meta.get('main_metric') or '')
         self.test_metric_name = str(meta.get('test_metric_name') or '')
 
+    def _refresh_epoch_summary_from_log(self):
+        summary = parse_epoch_summary(self.log)
+        if not summary:
+            return
+        self.trained_epochs = summary.get('trained_epochs')
+        self.log_best_epoch = summary.get('log_best_epoch')
+        self.avg_train_epoch_seconds = summary.get('avg_train_epoch_seconds')
+        self.avg_eval_epoch_seconds = summary.get('avg_eval_epoch_seconds')
+        self.epoch_summary = dumps_epoch_summary(summary)
+        if self.best_epoch is None and self.log_best_epoch is not None:
+            self.best_epoch = self.log_best_epoch
+
+    def dictify_epoch_summary(self):
+        if not self.epoch_summary:
+            return None
+        return handler.json_loads(self.epoch_summary)
+
     def prettify_log(self):
         return self.log.splitlines() if self.log else None
 
@@ -412,6 +436,11 @@ class Experiment(models.Model):
             'world_size': self.world_size,
             'best_epoch': self.best_epoch,
             'best_valid_metric': self.best_valid_metric,
+            'trained_epochs': self.trained_epochs,
+            'log_best_epoch': self.log_best_epoch,
+            'avg_train_epoch_seconds': self.avg_train_epoch_seconds,
+            'avg_eval_epoch_seconds': self.avg_eval_epoch_seconds,
+            'epoch_summary': self.dictify_epoch_summary(),
         }
 
     def json(self):
@@ -439,6 +468,11 @@ class Experiment(models.Model):
             'best_valid_metric': self.best_valid_metric,
             'main_metric': self.main_metric,
             'test_metric_name': self.test_metric_name,
+            'trained_epochs': self.trained_epochs,
+            'log_best_epoch': self.log_best_epoch,
+            'avg_train_epoch_seconds': self.avg_train_epoch_seconds,
+            'avg_eval_epoch_seconds': self.avg_eval_epoch_seconds,
+            'epoch_summary': self.dictify_epoch_summary(),
         }
 
     def __str__(self):
