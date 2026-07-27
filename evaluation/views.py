@@ -225,10 +225,12 @@ class LeaderboardView(View):
             get_leaderboard(
                 replicate=function.parse_int(request.GET.get('replicate'), default=1, minimum=1),
                 metric=request.GET.get('metric', ExportParams.DEFAULT_METRIC),
+                plan_name=request.GET.getlist('plan_name') or request.GET.get('plan_name'),
                 data_name=request.GET.getlist('data_name') or request.GET.get('data_name'),
                 model_name=request.GET.getlist('model_name') or request.GET.get('model_name'),
                 task_type=request.GET.getlist('task_type') or request.GET.get('task_type'),
                 repr_type=request.GET.getlist('repr_type') or request.GET.get('repr_type'),
+                run_id=request.GET.getlist('run_id') or request.GET.get('run_id'),
                 limit=function.parse_int(
                     request.GET.get('limit'),
                     default=ExportParams.DEFAULT_LIMIT,

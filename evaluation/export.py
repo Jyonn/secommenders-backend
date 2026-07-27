@@ -48,21 +48,25 @@ def get_leaderboard(
     *,
     replicate=1,
     metric='ndcg@10',
+    plan_name=None,
     data_name=None,
     model_name=None,
     task_type=None,
     repr_type=None,
+    run_id=None,
     limit=50,
 ):
     metric = str(metric).lower()
     evaluations = Evaluation.objects.all().order_by('-modified_at')
     for field_name, value in [
+        ('plan_name', plan_name),
         ('data_name', data_name),
         ('model_name', model_name),
         ('task_type', task_type),
         ('repr_type', repr_type),
+        ('run_id', run_id),
     ]:
-        values = normalize_filter_values(value)
+        values = normalize_filter_values(value, lowercase=field_name != 'run_id')
         if values:
             evaluations = evaluations.filter(**{f'{field_name}__in': values})
 
