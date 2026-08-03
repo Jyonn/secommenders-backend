@@ -11,6 +11,21 @@ from evaluation.models import Evaluation, EvaluationConflictError, Experiment
 from evaluation.params import EvaluationParams, ExportParams
 
 
+FILTER_FIELDS = ('plan_name', 'data_name', 'model_name', 'task_type', 'repr_type', 'run_id')
+
+
+def parse_evaluation_filters(query):
+    filters = {}
+    for field_name in FILTER_FIELDS:
+        values = normalize_filter_values(
+            query.getlist(field_name),
+            lowercase=field_name != 'run_id',
+        )
+        if values:
+            filters[field_name] = values
+    return filters
+
+
 class HealthView(View):
     def get(self, request):
         return ok({'status': 'ok'})
@@ -37,12 +52,8 @@ class EvaluationView(View):
             maximum=EvaluationParams.LIST_PAGE_SIZE_MAX,
         )
         evaluations = Evaluation.objects.all().order_by('-modified_at')
-        for field_name in ['plan_name', 'data_name', 'model_name', 'task_type', 'repr_type', 'run_id']:
-            values = []
-            for value in request.GET.getlist(field_name):
-                values.extend(normalize_filter_values(value, lowercase=field_name != 'run_id'))
-            if values:
-                evaluations = evaluations.filter(**{f'{field_name}__in': values})
+        for field_name, values in parse_evaluation_filters(request.GET).items():
+            evaluations = evaluations.filter(**{f'{field_name}__in': values})
         paginator = Paginator(evaluations, page_size)
         current_page = paginator.page(min(page, paginator.num_pages or 1))
         return ok(
@@ -221,23 +232,21 @@ class LogSummarizeView(View):
 
 class LeaderboardView(View):
     def get(self, request):
+        filters = parse_evaluation_filters(request.GET)
         return ok(
             get_leaderboard(
                 replicate=function.parse_int(request.GET.get('replicate'), default=1, minimum=1),
                 metric=request.GET.get('metric', ExportParams.DEFAULT_METRIC),
-                plan_name=request.GET.getlist('plan_name') or request.GET.get('plan_name'),
-                data_name=request.GET.getlist('data_name') or request.GET.get('data_name'),
-                model_name=request.GET.getlist('model_name') or request.GET.get('model_name'),
-                task_type=request.GET.getlist('task_type') or request.GET.get('task_type'),
-                repr_type=request.GET.getlist('repr_type') or request.GET.get('repr_type'),
-                run_id=request.GET.getlist('run_id') or request.GET.get('run_id'),
+                **filters,
                 limit=function.parse_int(
                     request.GET.get('limit'),
                     default=ExportParams.DEFAULT_LIMIT,
                     minimum=1,
                     maximum=200,
                 ),
-            )
+            ),
+            applied_filters=filters,
+            api_version='leaderboard.filters.v2',
         )
 
 
